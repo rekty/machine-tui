@@ -7,7 +7,7 @@ export const ENDPOINTS = {
 };
 
 // Publishable App Key: names the app on the consent screen and can spend nothing.
-export const APP_KEY = "";
+export const APP_KEY = "pk_UVURULKkmgCGn8d6";
 
 const STORE_KEY = "peti.key";
 const DEVICE_KEY = "peti.device";
