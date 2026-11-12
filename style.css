@@ -157,6 +157,9 @@ select {
   max-width: 260px;
 }
 .meter { margin: 0 0 0 auto; color: var(--dim); font-size: 12px; }
+.knote { flex-basis: 100%; margin: 0; font-size: 12px; color: var(--dim); }
+.knote[data-state="ok"] { color: #9be6ad; }
+.knote[data-state="warn"] { color: var(--amber); }
 .meter b { color: var(--ink); font-weight: 600; }
 
 .about {

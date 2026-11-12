@@ -1,5 +1,14 @@
 import { connected, startDevice, pollDevice, useKey, signOut, models, turn } from "./shared/pollen.js";
-import { blankState, systemPrompt, parseReply, estimateCost, formatPollen } from "./shared/machine.js";
+import {
+  blankState,
+  systemPrompt,
+  parseReply,
+  estimateCost,
+  formatPollen,
+  machineTurn,
+  kernelStatus,
+  REJECTED_KERNELS,
+} from "./shared/machine.js";
 
 const STATE_KEY = "peti.state";
 const MODEL_KEY = "peti.model";
@@ -128,12 +137,20 @@ async function connectFlow() {
   }, 2200);
 }
 
-function addUsage(a, b) {
-  if (!a && !b) return null;
-  return {
-    prompt_tokens: (Number(a?.prompt_tokens) || 0) + (Number(b?.prompt_tokens) || 0),
-    completion_tokens: (Number(a?.completion_tokens) || 0) + (Number(b?.completion_tokens) || 0),
-  };
+/** Say plainly whether the selected kernel was measured against the machine prompt. */
+function kernelNote(id = model) {
+  const status = kernelStatus(id);
+  const note = el("kernel-note");
+  if (!note) return;
+  if (status === "verified") {
+    note.textContent = "✓ tested: keeps the JSON contract, so the machine remembers its files.";
+    note.dataset.state = "ok";
+  } else {
+    note.textContent =
+      "⚠ untested kernel: it may answer in prose and lose the machine's memory. " +
+      "Verified: openai/gpt-5.4-nano, z-ai/glm-5.3-flash.";
+    note.dataset.state = "warn";
+  }
 }
 
 function escapeHtml(value) {
@@ -163,6 +180,7 @@ async function loadModels() {
     const list = await models();
     const text = list
       .filter((m) => (m.output_modalities || []).includes("text") && !m.paid_only)
+      .filter((m) => !REJECTED_KERNELS.some((k) => k.id === (m.name || m.id)))
       .map((m) => ({ id: m.name || m.id, price: m.pricing || {} }))
       .filter((m) => m.id)
       .sort((a, b) => Number(a.price.completionTextTokens || 0) - Number(b.price.completionTextTokens || 0));
@@ -173,7 +191,8 @@ async function loadModels() {
       .map((m) => {
         const out = Number(m.price.completionTextTokens || 0);
         const perToken = out ? out.toFixed(9).replace(/0+$/, "").replace(/\.$/, "").replace(".", ",") : "";
-        const label = perToken ? `${m.id} — ${perToken}/tok` : m.id;
+        const mark = kernelStatus(m.id) === "verified" ? "✓ " : "⚠ ";
+        const label = `${mark}${m.id}${perToken ? ` — ${perToken}/tok` : ""}`;
         return `<option value="${escapeHtml(m.id)}"${m.id === model ? " selected" : ""}>${escapeHtml(label)}</option>`;
       })
       .join("");
@@ -181,6 +200,7 @@ async function loadModels() {
   } catch {
     select.innerHTML = `<option value="${escapeHtml(model)}">${escapeHtml(model)}</option>`;
   }
+  kernelNote(model);
 }
 
 async function runCommand(command) {
@@ -199,36 +219,13 @@ async function runCommand(command) {
   try {
     const system = systemPrompt(state);
     const ask = `command: ${command}\n\nReply with ONE JSON object only, in this exact shape:\n{"screen":"…","state":{…},"crashed":false}`;
-    let reply = await turn({
-      model,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: ask },
-      ],
-      signal: controller.signal,
+    const result = await machineTurn({
+      send: (messages, maxTokens) => turn({ model, messages, maxTokens, signal: controller.signal }),
+      system,
+      ask,
+      state,
     });
-    let parsed = parseReply(reply.text, state);
-
-    // A model that drifts out of the format loses the machine's memory, so give it
-    // exactly one strict second chance before showing the raw text.
-    if (!parsed.structured) {
-      const retry = await turn({
-        model,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: ask },
-          { role: "assistant", content: reply.text.slice(0, 900) },
-          { role: "user", content: "Wrong shape. Reply again with one JSON object and nothing else: no fence, no prose, no boot screen outside \"screen\"." },
-        ],
-        maxTokens: 420,
-        signal: controller.signal,
-      });
-      const second = parseReply(retry.text, state);
-      if (second.structured) {
-        parsed = second;
-        reply = { ...retry, ms: reply.ms + retry.ms, usage: addUsage(reply.usage, retry.usage) };
-      }
-    }
+    const { reply, parsed } = result;
 
     clearInterval(ticker);
     pending.remove();
@@ -252,7 +249,11 @@ async function runCommand(command) {
       `Turn <b>${turns}</b> · ${(reply.ms / 1000).toFixed(1)}s · this turn <b>${formatPollen(cost)}</b> · ` +
       `total <b>${formatPollen(total)}</b> Pollen`,
     );
-    if (!parsed.structured) line("! the model answered outside the machine format — output shown as-is");
+    if (result.retryFailed) {
+      line("! this kernel ignored the JSON contract twice — output shown as-is and the machine did not advance");
+    } else if (result.attempts === 2) {
+      line("~ the kernel drifted out of format; the retry recovered it (state kept)");
+    }
   } catch (error) {
     clearInterval(ticker);
     pending.remove();
@@ -306,6 +307,7 @@ el("model").addEventListener("change", (event) => {
   model = event.target.value;
   localStorage.setItem(MODEL_KEY, model);
   pricing = prices.get(model) || null;
+  kernelNote(model);
   line(`*** KERNEL SWAPPED TO ${model} ***`);
 });
 

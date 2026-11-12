@@ -33,6 +33,7 @@
       <button id="reset" class="ghost" type="button">Reset machine</button>
       <button id="copy" class="ghost" type="button">Copy screen</button>
       <p class="meter" id="meter">No turn run yet.</p>
+      <p class="knote" id="kernel-note" data-state="warn">Checking kernel…</p>
     </div>
   </section>
 
@@ -46,6 +47,10 @@
     <p>Because the state is the only thing carrying over, you can break the computer on purpose:
       create a file, reboot it, read the file again; lock yourself out of a directory and ask the
       machine why. It is a world model for a machine that never existed.</p>
+    <p>The kernel picker marks each model: <strong>✓</strong> means it was measured against this
+      app's system prompt and held the JSON contract, <strong>⚠</strong> means untested — it may
+      answer in prose, and then the machine forgets its files between commands. Kernel
+      <code>openai/gpt-oss-20b</code> is hidden entirely: it returned HTTP 400 on this prompt.</p>
     <p>Each turn spends <strong>your own Pollen</strong> through
       <a href="https://github.com/pollinations/pollinations/blob/main/BRING_YOUR_OWN_POLLEN.md" rel="noopener">Bring your own Pollen</a>.
       Your key goes nowhere except <code>gen.pollinations.ai</code> and lives in this tab's session

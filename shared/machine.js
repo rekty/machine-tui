@@ -1,6 +1,24 @@
 // The "machine" is a language model pretending to be a 1980s computer.
 // Everything here is pure so the browser and the tests share one definition.
 
+// Kernels measured against /v1/chat/completions with this app's own system prompt.
+// Everything else is offered but flagged, because a kernel that cannot hold the
+// JSON contract loses the machine's memory.
+export const VERIFIED_KERNELS = ["openai/gpt-5.4-nano", "z-ai/glm-5.3-flash"];
+
+// Kernels that failed the same check and are kept out of the picker entirely.
+export const REJECTED_KERNELS = [{ id: "openai/gpt-oss-20b", reason: "HTTP 400 on the machine prompt" }];
+
+export function isVerifiedKernel(id) {
+  return VERIFIED_KERNELS.includes(String(id || ""));
+}
+
+export function kernelStatus(id) {
+  if (isVerifiedKernel(id)) return "verified";
+  if (REJECTED_KERNELS.some((k) => k.id === id)) return "rejected";
+  return "untested";
+}
+
 export const MAX_FILES = 12;
 export const MAX_FILE_CHARS = 240;
 export const MAX_PROCS = 8;
@@ -165,6 +183,54 @@ export function estimateCost(usage, pricing) {
   const total = prompt - cached + completion;
   if (!Number.isFinite(total) || total < 0) return null;
   return total;
+}
+
+export const RETRY_INSTRUCTION =
+  'Wrong shape. Reply again with one JSON object and nothing else: no fence, no prose, no boot screen outside "screen".';
+
+export function addUsage(a, b) {
+  if (!a && !b) return null;
+  return {
+    prompt_tokens: (Number(a?.prompt_tokens) || 0) + (Number(b?.prompt_tokens) || 0),
+    completion_tokens: (Number(a?.completion_tokens) || 0) + (Number(b?.completion_tokens) || 0),
+  };
+}
+
+/**
+ * One machine turn with the retry policy in one testable place: ask, and if the
+ * reply broke format ask once more with the strict instruction before giving up.
+ * `send(messages)` is injected so tests never touch the network.
+ */
+export async function machineTurn({ send, system, ask, state, maxTokens = 420 }) {
+  const messages = [
+    { role: "system", content: system },
+    { role: "user", content: ask },
+  ];
+  const first = await send(messages, maxTokens);
+  const parsed = parseReply(first.text, state);
+  if (parsed.structured) return { reply: first, parsed, attempts: 1 };
+
+  const second = await send(
+    [
+      ...messages,
+      { role: "assistant", content: String(first.text || "").slice(0, 900) },
+      { role: "user", content: RETRY_INSTRUCTION },
+    ],
+    maxTokens,
+  );
+  const retried = parseReply(second.text, state);
+  const merged = {
+    text: retried.structured ? second.text : first.text,
+    usage: addUsage(first.usage, second.usage),
+    ms: (Number(first.ms) || 0) + (Number(second.ms) || 0),
+    model: first.model || second.model,
+  };
+  return {
+    reply: merged,
+    parsed: retried.structured ? retried : parsed,
+    attempts: 2,
+    retryFailed: !retried.structured,
+  };
 }
 
 export function formatPollen(value) {

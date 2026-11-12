@@ -8,6 +8,9 @@ import {
   trimScreen,
   estimateCost,
   formatPollen,
+  machineTurn,
+  kernelStatus,
+  RETRY_INSTRUCTION,
   MAX_FILES,
   MAX_SCREEN_LINES,
 } from "../shared/machine.js";
@@ -99,4 +102,84 @@ test("cost is null without usage and formats readably", () => {
   assert.equal(formatPollen(0), "0");
   assert.equal(formatPollen(0.0000001), "<0,00001");
   assert.match(formatPollen(0.0042), /^0,00420$/);
+});
+
+test("kernel status marks what was measured, hides what failed", () => {
+  assert.equal(kernelStatus("openai/gpt-5.4-nano"), "verified");
+  assert.equal(kernelStatus("z-ai/glm-5.3-flash"), "verified");
+  assert.equal(kernelStatus("openai/gpt-oss-20b"), "rejected");
+  assert.equal(kernelStatus("someone/new-model-4"), "untested");
+});
+
+const good = (files = { "/X": "y" }) =>
+  JSON.stringify({ screen: "OK", state: { cwd: "/", files, procs: ["init"], time: 3 }, crashed: false });
+
+const answer = (text, usage = { prompt_tokens: 10, completion_tokens: 5 }, ms = 100) => ({ text, usage, ms });
+
+test("machineTurn does not retry a reply that already keeps the contract", async () => {
+  const calls = [];
+  const send = async (messages) => {
+    calls.push(messages);
+    return answer(good());
+  };
+  const out = await machineTurn({ send, system: "S", ask: "A", state: blankState() });
+  assert.equal(calls.length, 1);
+  assert.equal(out.attempts, 1);
+  assert.equal(out.parsed.structured, true);
+  assert.equal(out.retryFailed, undefined);
+});
+
+test("machineTurn retries once in prose and adopts the recovered state", async () => {
+  const calls = [];
+  const replies = [answer("```\nPETI-64 BASIC\nREADY\n```", { prompt_tokens: 10, completion_tokens: 40 }, 120), answer(good({ "/NOTES.TXT": "beige" }), { prompt_tokens: 30, completion_tokens: 20 }, 80)];
+  const send = async (messages) => {
+    calls.push(messages);
+    return replies[calls.length - 1];
+  };
+  const out = await machineTurn({ send, system: "S", ask: "A", state: blankState() });
+  assert.equal(calls.length, 2);
+  assert.equal(out.attempts, 2);
+  assert.equal(out.retryFailed, false);
+  assert.equal(out.parsed.state.files["/NOTES.TXT"], "beige");
+  assert.deepEqual(out.reply.usage, { prompt_tokens: 40, completion_tokens: 60 }, "both calls are billed");
+  assert.equal(out.reply.ms, 200);
+});
+
+test("the retry carries the strict instruction and the drifted reply", async () => {
+  const calls = [];
+  const send = async (messages) => {
+    calls.push(messages);
+    return answer(calls.length === 1 ? "Sure! Here is the machine:" : good());
+  };
+  await machineTurn({ send, system: "SYS", ask: "ASK", state: blankState() });
+  const second = calls[1];
+  assert.equal(second.length, 4);
+  assert.equal(second[0].content, "SYS");
+  assert.equal(second[1].content, "ASK");
+  assert.equal(second[2].role, "assistant");
+  assert.match(second[2].content, /Here is the machine/);
+  assert.equal(second[3].content, RETRY_INSTRUCTION);
+});
+
+test("machineTurn gives up after one retry and keeps the machine's memory", async () => {
+  const before = { ...blankState(), cwd: "/KEEP" };
+  let calls = 0;
+  const send = async () => {
+    calls += 1;
+    return answer("still prose");
+  };
+  const out = await machineTurn({ send, system: "S", ask: "A", state: before });
+  assert.equal(calls, 2, "exactly one retry, never a loop");
+  assert.equal(out.attempts, 2);
+  assert.equal(out.retryFailed, true);
+  assert.equal(out.parsed.structured, false);
+  assert.equal(out.parsed.screen, "still prose");
+  assert.equal(out.parsed.state.cwd, "/KEEP");
+});
+
+test("machineTurn surfaces a failing kernel instead of swallowing it", async () => {
+  const send = async () => {
+    throw Object.assign(new Error("HTTP 400"), { code: "auth" });
+  };
+  await assert.rejects(() => machineTurn({ send, system: "S", ask: "A", state: blankState() }), /HTTP 400/);
 });
