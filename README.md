@@ -48,6 +48,20 @@ Tests:
 node --test
 ```
 
+## Kernel notes (measured, not assumed)
+
+Every kernel is a text model, but not every model keeps the JSON contract. Measured against
+`/v1/chat/completions` with this app's own system prompt:
+
+| Kernel | Result |
+|---|---|
+| `openai/gpt-5.4-nano` (default) | object returned, `/NOTES.TXT` created, `CAT` reads it back |
+| `z-ai/glm-5.3-flash` | object returned, state kept |
+| `openai/gpt-oss-20b` | HTTP 400 — not usable as a kernel |
+
+A model that drifts out of the format gets one strict retry; if it drifts twice the raw text is
+shown and flagged, so the machine never silently loses its memory.
+
 ## Cost
 
 Every command is one chat completion paid from the reader's own Pollen. The default kernel
