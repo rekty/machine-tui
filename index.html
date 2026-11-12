@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PETI-64 — a computer whose operating system is a language model</title>
+<meta name="description" content="Type shell commands at a fictional 1980s computer. Nothing runs: a Pollinations language model invents the machine's output and keeps its files, processes and clock as state. Pay with your own Pollen." />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<header class="bar">
+  <a class="brand" href="./">PETI<span>·</span>64</a>
+  <p class="tag">A beige box with a word kernel. Nothing executes here but the model.</p>
+  <button id="pollen" class="pill" type="button">Connect Pollen</button>
+</header>
+
+<main>
+  <section class="rig">
+    <div class="crt" id="crt">
+      <div class="bezel">
+        <pre id="screen" class="screen" aria-live="polite" tabindex="0"></pre>
+        <form id="cmd" class="cmdrow" autocomplete="off">
+          <span id="prompt" class="prompt">guest@peti64:/$</span>
+          <input id="input" class="input" type="text" spellcheck="false" autocapitalize="off"
+                 placeholder="type a command — HELP, LS, CAT /README.TXT, RUN GAME" aria-label="Command" />
+          <button id="send" class="go" type="submit">↵</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="controls">
+      <label class="field"><span>Kernel model</span><select id="model"></select></label>
+      <button id="reset" class="ghost" type="button">Reset machine</button>
+      <button id="copy" class="ghost" type="button">Copy screen</button>
+      <p class="meter" id="meter">No turn run yet.</p>
+    </div>
+  </section>
+
+  <section class="about">
+    <h2>What is actually happening</h2>
+    <p>There is no CPU and no shell in this page. Every line after the boot sequence is written by
+      the language model you picked, one chat completion per command. The machine's files, working
+      directory, processes and clock are a small JSON object the model is handed back on the next
+      turn — that object is the computer. Wipe it with <em>Reset machine</em> and the same command
+      can produce a different, consistent machine.</p>
+    <p>Because the state is the only thing carrying over, you can break the computer on purpose:
+      create a file, reboot it, read the file again; lock yourself out of a directory and ask the
+      machine why. It is a world model for a machine that never existed.</p>
+    <p>Each turn spends <strong>your own Pollen</strong> through
+      <a href="https://github.com/pollinations/pollinations/blob/main/BRING_YOUR_OWN_POLLEN.md" rel="noopener">Bring your own Pollen</a>.
+      Your key goes nowhere except <code>gen.pollinations.ai</code> and lives in this tab's session
+      storage. The price printed under the screen is computed from the usage the API reports and the
+      per-token prices in <code>/models</code>.</p>
+    <p class="small">Try: <code>HELP</code> · <code>LS</code> · <code>CAT /README.TXT</code> ·
+      <code>MAKE /NOTES.TXT "buy a beige monitor"</code> · <code>RUN ZORK</code> ·
+      <code>WHOAMI</code> · <code>REBOOT</code></p>
+  </section>
+</main>
+
+<footer class="foot">
+  <a href="https://pollinations.ai/?ref=badge" rel="noopener">
+    <img src="https://raw.githubusercontent.com/pollinations/pollinations/main/packages/ui/src/brand/badge-made-with.svg" alt="Made with pollinations.ai" height="28" />
+  </a>
+  <span class="small">PETI-64 · the machine is a prompt</span>
+</footer>
+
+<div id="modal" class="modal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <h2 id="modal-title">Connect your Pollen</h2>
+    <div id="modal-body"></div>
+    <button id="modal-close" class="ghost" type="button">Close</button>
+  </div>
+</div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
