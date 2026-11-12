@@ -3,7 +3,7 @@ import { blankState, systemPrompt, parseReply, estimateCost, formatPollen } from
 
 const STATE_KEY = "peti.state";
 const MODEL_KEY = "peti.model";
-const DEFAULT_MODEL = "openai/gpt-oss-20b";
+const DEFAULT_MODEL = "openai/gpt-5.4-nano";
 
 const el = (id) => document.getElementById(id);
 const screen = el("screen");
@@ -128,6 +128,14 @@ async function connectFlow() {
   }, 2200);
 }
 
+function addUsage(a, b) {
+  if (!a && !b) return null;
+  return {
+    prompt_tokens: (Number(a?.prompt_tokens) || 0) + (Number(b?.prompt_tokens) || 0),
+    completion_tokens: (Number(a?.completion_tokens) || 0) + (Number(b?.completion_tokens) || 0),
+  };
+}
+
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (ch) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
@@ -189,18 +197,41 @@ async function runCommand(command) {
 
   controller = new AbortController();
   try {
-    const reply = await turn({
+    const system = systemPrompt(state);
+    const ask = `command: ${command}\n\nReply with ONE JSON object only, in this exact shape:\n{"screen":"…","state":{…},"crashed":false}`;
+    let reply = await turn({
       model,
       messages: [
-        { role: "system", content: systemPrompt(state) },
-        { role: "user", content: `command: ${command}` },
+        { role: "system", content: system },
+        { role: "user", content: ask },
       ],
       signal: controller.signal,
     });
+    let parsed = parseReply(reply.text, state);
+
+    // A model that drifts out of the format loses the machine's memory, so give it
+    // exactly one strict second chance before showing the raw text.
+    if (!parsed.structured) {
+      const retry = await turn({
+        model,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: ask },
+          { role: "assistant", content: reply.text.slice(0, 900) },
+          { role: "user", content: "Wrong shape. Reply again with one JSON object and nothing else: no fence, no prose, no boot screen outside \"screen\"." },
+        ],
+        maxTokens: 420,
+        signal: controller.signal,
+      });
+      const second = parseReply(retry.text, state);
+      if (second.structured) {
+        parsed = second;
+        reply = { ...retry, ms: reply.ms + retry.ms, usage: addUsage(reply.usage, retry.usage) };
+      }
+    }
+
     clearInterval(ticker);
     pending.remove();
-
-    const parsed = parseReply(reply.text, state);
     const chunks = parsed.screen.split("\n");
     chunks.forEach((row) => line(row));
     if (parsed.crashed) {
