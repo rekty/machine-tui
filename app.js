@@ -164,7 +164,8 @@ async function loadModels() {
     select.innerHTML = options
       .map((m) => {
         const out = Number(m.price.completionTextTokens || 0);
-        const label = out ? `${m.id} — ${out.toFixed(6).replace(".", ",")}/tok` : m.id;
+        const perToken = out ? out.toFixed(9).replace(/0+$/, "").replace(/\.$/, "").replace(".", ",") : "";
+        const label = perToken ? `${m.id} — ${perToken}/tok` : m.id;
         return `<option value="${escapeHtml(m.id)}"${m.id === model ? " selected" : ""}>${escapeHtml(label)}</option>`;
       })
       .join("");
