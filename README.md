@@ -1,3 +1,5 @@
+[![Made with pollinations.ai](https://raw.githubusercontent.com/pollinations/pollinations/main/packages/ui/src/brand/badge-made-with.svg)](https://pollinations.ai/?ref=badge)
+
 # PETI-64
 
 A fictional 1980s computer whose operating system is a language model. You type shell commands at
